@@ -1,60 +1,147 @@
 # ai-value-tracker
 
-Measures Claude Code AI spend against the customer value it produces. Answers the question "is the AI investment paying back?" with numbers, per feature, per week.
+![python](https://img.shields.io/badge/python-3.11%2B-blue)
+![license](https://img.shields.io/badge/license-MIT-green)
+![status](https://img.shields.io/badge/status-alpha-orange)
 
-## Why
+Measures Claude Code AI spend against the customer value it produces. Answers the question "is the AI investment paying back?" with numbers, per feature, per week. Drops a CSV and a bar chart in your inbox every Monday.
 
-Most teams can describe AI ROI as a story. This tool turns it into a chart. Spend in. Value out. Ratio over time.
+Built because asking "how much are we spending on Claude?" gets a number, asking "what did it produce?" gets a story. This turns the story into a number.
 
-## What it does
+## What you get
 
-| Module | Job |
-|---|---|
-| `avt.spend` | Walk Claude Code JSONL logs, sum token cost per session, attribute to branch and GitHub issue. |
-| `avt.value` | Pull GitHub PRs by issue. Lines changed, files touched, merge state, age. |
-| `avt.report` | Join spend and value. Per-issue cost-vs-value CSV plus a bar chart. |
-| `avt.telemetry` | Wraith product-side spec. Schema for AI-accepted vs human-edited events. |
+A single command that walks your Claude Code session logs, joins them to the GitHub issues they belong to, pulls the PR stats those issues produced, and emits one CSV row per issue with cost and value side by side.
+
+```
+issue   branch                       sessions  cost_usd  prs_merged  lines_added  value_score  ratio
+#7922   feat/issue-7922-foo                45   3944.42           2          634         1261   0.32
+#6830   feat/issue-6830-bar                12   1015.53           1          313          581   0.57
+```
+
+Plus a bar chart of the top N issues by spend, with value scored alongside.
+
+## Why bother
+
+Three reasons.
+
+**Cost without attribution is unmanageable.** "Last month was $27k" is a panic number. "Issue #7922 was $3.9k, shipped 2 PRs, 634 lines" is a decision.
+
+**Fast feedback on routing.** If sonnet sessions are producing the same ratio as opus sessions on the same kind of work, route more work to sonnet.
+
+**Commercial conversation starter.** Once product-side telemetry is wired (see `docs/wraith-telemetry-spec.md`), `value_score` becomes "minutes of reviewer time saved" or "drafts accepted." That's the number for pricing conversations.
+
+## How it works
+
+```
+~/.claude/projects/<project>/*.jsonl   →  avt-spend  →  spend.csv
+                                                          ↓
+GitHub repo (gh CLI)                   →  avt-value  →  value.csv
+                                                          ↓
+                                          avt-report → report.csv + chart.png
+```
+
+Spend side reads Claude Code's per-session JSONL logs, sums token usage per session, multiplies by approximate model pricing, and attributes the session to a branch via git reflog timestamp matching. Branch then maps to an issue number (from branch name or commit `#NNNN` references).
+
+Value side reads the GitHub repo via `gh`, pulls every PR that references each issue, and sums lines changed, files touched, PR merge state.
+
+Report side joins on issue number, computes a placeholder `value_score = lines + (merged_prs × 200)`, and writes CSV + bar chart.
+
+The placeholder formula is deliberately simple. Replace it with the real customer-recognised measure once you have product telemetry.
 
 ## Install
 
 ```bash
-cd ~/Repos/ai-value-tracker
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+git clone https://github.com/ao92265/ai-value-tracker
+cd ai-value-tracker
+make install
 ```
+
+Requires Python 3.11+, `gh` CLI authenticated, and a Claude Code project directory with JSONL logs.
 
 ## Use
 
-```bash
-avt-spend --days 30 --out spend.csv
-avt-value --days 30 --out value.csv
-avt-report --spend spend.csv --value value.csv --out report.csv --chart chart.png
-```
-
-Or run the weekly cron:
+One-shot for the last 30 days:
 
 ```bash
-~/Repos/ai-value-tracker/bin/avt-weekly
+source .venv/bin/activate
+avt-spend  --days 30 --out out/spend.csv
+avt-value  --days 30 --out out/value.csv  --repo i2group-FIS/Wraith
+avt-report --spend out/spend.csv --value out/value.csv \
+           --out out/report.csv --chart out/chart.png --top 20
 ```
 
-## Pricing
+Or just:
 
-Token prices live in `src/avt/spend.py` near the top. Update when Anthropic changes them.
+```bash
+make report
+```
+
+Or weekly cron (snapshots to `~/.claude/observatory-logs/avt/YYYY-MM-DD/`):
+
+```bash
+0 9 * * 1  /Users/you/Repos/ai-value-tracker/bin/avt-weekly >> /tmp/avt-weekly.log 2>&1
+```
+
+## Configure
+
+**Project directory.** `avt-spend --project /Users/you/.claude/projects/-your-project-here`. Default is hard-coded to Wraith. Change it in `src/avt/spend.py:DEFAULT_PROJECT` or pass `--project` every time.
+
+**Repo.** `avt-value --repo owner/repo`. Default `i2group-FIS/Wraith`. Override per call.
+
+**Pricing.** `src/avt/spend.py` top of file. USD per million tokens, per model. Update when Anthropic changes prices.
+
+**Value formula.** `src/avt/report.py:value_score()`. Default is a code-volume proxy. Swap it for whatever you actually care about.
 
 ## Output
 
-`report.csv` columns: `issue, branch, cost_usd, prs_open, prs_merged, lines_added, lines_removed, files_changed, value_score, ratio`.
+`report.csv`:
 
-`value_score` is a placeholder formula. Replace with the real customer-recognised measure once product telemetry is wired up (see `docs/wraith-telemetry-spec.md`).
+| Column | Meaning |
+|---|---|
+| `issue` | GitHub issue number, or `(unattributed)` |
+| `branch` | First branch seen for this issue |
+| `sessions` | Claude Code sessions in window |
+| `cost_usd` | Sum of all session costs |
+| `prs_open` / `prs_merged` / `prs_closed` | PR counts referencing this issue |
+| `lines_added` / `lines_removed` / `files_changed` | Sum across PRs |
+| `value_score` | Placeholder. Replace. |
+| `ratio` | `value_score / cost_usd` |
 
-## Limits
+`chart.png`: dual-axis bar chart, top N issues by spend, cost (red) and value (green) side by side.
 
-Pricing is approximate. Pre-launch.
+## Product telemetry
 
-Branch attribution uses git reflog timestamps near the session start. Sessions started before a checkout get attributed to the previous branch. About 5 percent noise.
+The CSV is half the story. Lines of code is not value. The other half is product-side telemetry: when a user accepts an AI-drafted field, edits it, or rejects it. That signal is what should drive `value_score`.
 
-`value_score` is a stand-in until product telemetry lands.
+Spec is in [`docs/wraith-telemetry-spec.md`](docs/wraith-telemetry-spec.md). Prisma schema, endpoint, permission, rollout. Once it ships, `avt.telemetry` reads from it and replaces the placeholder.
+
+## What it doesn't do yet
+
+- Pricing is approximate. Pre-launch model variants might be off.
+- Branch attribution uses git reflog timestamps near the session start. Sessions started before a checkout get attributed to the previous branch. About 5 percent noise.
+- `value_score` is a stand-in. The real number comes from product telemetry.
+- No tests. v0.1.
+- No web UI. CSV plus PNG.
+
+## Layout
+
+```
+ai-value-tracker/
+├── README.md
+├── LICENSE
+├── CONTRIBUTING.md
+├── Makefile
+├── pyproject.toml
+├── bin/avt-weekly             cron-friendly snapshot
+├── src/avt/
+│   ├── spend.py               JSONL → cost per session, branch, issue
+│   ├── value.py               gh → PRs, lines, files per issue
+│   ├── report.py              join + CSV + chart
+│   └── telemetry.py           product-side stub
+├── docs/
+│   └── wraith-telemetry-spec.md
+└── examples/weekly-cron.sh
+```
 
 ## License
 
