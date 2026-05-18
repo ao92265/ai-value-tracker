@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Weekly AI value audit. Add to cron:
+#   0 9 * * 1  ~/Repos/ai-value-tracker/bin/avt-weekly
+set -euo pipefail
+
+REPO="${AVT_REPO:-$HOME/Repos/ai-value-tracker}"
+OUT_DIR="${AVT_OUT:-$HOME/.claude/observatory-logs/avt}"
+STAMP=$(date +%Y-%m-%d)
+DIR="$OUT_DIR/$STAMP"
+mkdir -p "$DIR"
+
+if [ ! -x "$REPO/.venv/bin/avt-spend" ]; then
+  echo "ERROR: venv not built. Run: cd $REPO && make install" >&2
+  exit 1
+fi
+
+VENV="$REPO/.venv/bin"
+
+"$VENV/avt-spend" --days 7 --out "$DIR/spend.csv"
+"$VENV/avt-value" --days 7 --out "$DIR/value.csv"
+"$VENV/avt-report" --spend "$DIR/spend.csv" --value "$DIR/value.csv" \
+                   --out "$DIR/report.csv" --chart "$DIR/chart.png" --top 15
+
+echo
+echo "Weekly AI value report: $DIR"
+ls -la "$DIR"
