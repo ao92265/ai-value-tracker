@@ -15,6 +15,7 @@ dependencies = [
 avt-spend = "avt.spend:main"
 avt-value = "avt.value:main"
 avt-report = "avt.report:main"
+avt-cost = "avt.cost:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

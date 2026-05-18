@@ -30,6 +30,31 @@ Three reasons.
 
 **Commercial conversation starter.** Once product-side telemetry is wired (see `docs/wraith-telemetry-spec.md`), `value_score` becomes "minutes of reviewer time saved" or "drafts accepted." That's the number for pricing conversations.
 
+## Cost sources
+
+AI spend lives in more places than just Claude Code. `avt-cost` unifies them.
+
+| Source | Adapter | Status |
+|---|---|---|
+| Claude Code (JSONL logs) | `--claude` | shipped |
+| Anthropic API (console CSV export) | `--anthropic-csv <path>` | shipped |
+| GitHub Copilot (admin API per seat) | `--copilot-org <org>` | shipped |
+| Generic vendor (any CSV: Intercom Fin, Gong, Cursor, OpenAI, etc.) | `--vendor-csv <path> --vendor-source <name>` | shipped |
+| Azure billing AI resource group | `--azure-billing` | planned |
+| OpenAI usage API | `--openai` | planned |
+
+Run any combination in one shot:
+
+```bash
+avt-cost --claude --days 30 \
+         --anthropic-csv anthropic-export.csv \
+         --copilot-org harriscomputer \
+         --vendor-csv gong-bill.csv --vendor-source gong \
+         --out out/cost.csv
+```
+
+Output is one unified CSV with a `source` column, plus a percentage breakdown by source on stderr.
+
 ## How it works
 
 ```
