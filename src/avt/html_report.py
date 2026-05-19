@@ -1,5 +1,7 @@
 """Render a single-page HTML cost-and-value report.
 
+Editorial / data-journalism layout. Space Grotesk + IBM Plex Mono on paper-tone palette.
+
 Inputs:
     --cost    avt-cost CSV  (source, started, cost_usd, attributed_to, units, notes)
     --report  avt-report CSV (optional: issue, branch, cost_usd, prs_*, value_score, ratio)
@@ -17,113 +19,193 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 
-PALETTE = {
-    "blue":   "#1d4ed8",
-    "teal":   "#0d9488",
-    "amber":  "#b45309",
-    "purple": "#6d28d9",
-    "gray":   "#94a3b8",
-    "red":    "#dc2626",
-    "green":  "#16a34a",
-}
+SEG_COLORS = ["#0a4f4a", "#0e6b64", "#c8602a", "#6b6457", "#a8362b", "#3a362f"]
 
 
 CSS = """
-:root {
-  --bg: #ffffff; --bg-soft: #f8fafc; --bg-deep: #f1f5f9;
-  --ink: #0f172a; --mute: #64748b; --border: #e2e8f0;
-  --accent: #1d4ed8; --accent-soft: #dbeafe;
-  --teal: #0d9488; --amber: #b45309; --purple: #6d28d9;
-  --red: #dc2626; --green: #16a34a;
-  --topbar: #312e81; --topbar-soft: #c7d2fe;
-  --radius: 8px; --radius-md: 12px;
+:root{
+  --paper:#f4efe6; --paper-2:#faf6ed;
+  --ink:#161513; --ink-2:#3a362f; --muted:#6b6457;
+  --rule:#d9d2c1; --rule-2:#c6bea8;
+  --teal:#0a4f4a; --teal-2:#0e6b64;
+  --terra:#c8602a; --red:#a8362b;
+  --positive:#0a4f4a; --negative:#a8362b;
 }
-* { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
-body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  color: var(--ink); background: var(--bg-soft); line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);}
+body{font-family:"Space Grotesk",system-ui,sans-serif;font-size:15px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+.num,.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-feature-settings:"tnum" 1,"zero" 1;}
+.page{max-width:1080px;margin:0 auto;padding:0 28px 80px;}
+
+.ribbon{background:var(--ink);color:var(--paper);font-family:"IBM Plex Mono",monospace;
+  font-size:12px;letter-spacing:0.04em;text-transform:uppercase;}
+.ribbon-inner{max-width:1080px;margin:0 auto;padding:10px 28px;display:flex;gap:24px;
+  align-items:center;flex-wrap:wrap;}
+.ribbon .dot{width:8px;height:8px;border-radius:50%;background:var(--terra);
+  display:inline-block;margin-right:8px;vertical-align:middle;}
+.ribbon strong{color:#fff;font-weight:600;}
+.ribbon .sep{opacity:0.4;}
+
+.masthead{display:flex;justify-content:space-between;align-items:flex-end;
+  border-bottom:2px solid var(--ink);padding:36px 0 18px;}
+.masthead h1{font-size:32px;font-weight:700;letter-spacing:-0.02em;margin:0;line-height:1;}
+.masthead h1 .accent{color:var(--teal);}
+.masthead .meta{text-align:right;font-family:"IBM Plex Mono",monospace;font-size:11px;
+  color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;line-height:1.6;}
+.masthead .meta .edition{color:var(--ink);font-weight:600;}
+
+.subhead{padding:14px 0 28px;border-bottom:1px solid var(--rule);
+  font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);
+  text-transform:uppercase;letter-spacing:0.08em;display:flex;gap:28px;flex-wrap:wrap;}
+.subhead span b{color:var(--ink);font-weight:600;}
+
+.hero{padding:56px 0 48px;border-bottom:1px solid var(--rule);display:grid;
+  grid-template-columns:1.5fr 1fr;gap:48px;align-items:end;}
+.hero-label{font-family:"IBM Plex Mono",monospace;font-size:11px;text-transform:uppercase;
+  letter-spacing:0.12em;color:var(--muted);margin-bottom:14px;}
+.hero-figure{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:184px;
+  line-height:0.85;letter-spacing:-0.045em;color:var(--ink);}
+.hero-figure .x{color:var(--teal);font-size:0.55em;font-weight:500;
+  vertical-align:0.18em;margin-left:0.04em;}
+.hero-blurb{font-size:17px;line-height:1.45;color:var(--ink-2);max-width:32ch;
+  padding-bottom:18px;}
+.hero-blurb em{font-style:normal;color:var(--teal);font-weight:600;}
+.hero-blurb .ratio-line{display:block;margin-top:14px;font-family:"IBM Plex Mono",monospace;
+  font-size:13px;color:var(--muted);}
+
+.kpis{display:grid;grid-template-columns:repeat(12,1fr);gap:0;
+  border-bottom:1px solid var(--rule);}
+.kpi{padding:28px 24px 28px 0;border-right:1px solid var(--rule);}
+.kpi:last-child{border-right:none;padding-right:0;}
+.kpi + .kpi{padding-left:24px;}
+.kpi.k-wide{grid-column:span 4;} .kpi.k-med{grid-column:span 3;} .kpi.k-narrow{grid-column:span 2;}
+.kpi .label{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--muted);
+  text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px;}
+.kpi .value{font-family:"IBM Plex Mono",monospace;font-size:32px;font-weight:500;
+  color:var(--ink);letter-spacing:-0.01em;line-height:1;}
+.kpi .sub{margin-top:8px;font-size:12px;color:var(--muted);}
+.kpi .sub .pos{color:var(--positive);font-weight:600;}
+.kpi .sub .neg{color:var(--negative);font-weight:600;}
+
+.sec{padding:48px 0 8px;}
+.sec-head{display:flex;align-items:baseline;gap:16px;margin-bottom:22px;}
+.sec-num{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--terra);
+  letter-spacing:0.1em;}
+.sec-title{font-size:22px;font-weight:600;letter-spacing:-0.01em;margin:0;}
+.sec-rule{flex:1;height:1px;background:var(--rule);}
+.sec-note{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);
+  text-transform:uppercase;letter-spacing:0.08em;}
+.sec-lede{font-size:16px;line-height:1.5;color:var(--ink-2);max-width:62ch;margin:0 0 28px;}
+
+.daily{display:grid;grid-template-columns:2fr 1fr;gap:48px;align-items:stretch;}
+.daily-bars{display:flex;flex-direction:column;gap:6px;}
+.bar-row{display:grid;grid-template-columns:64px 1fr 80px;align-items:center;gap:14px;
+  font-family:"IBM Plex Mono",monospace;font-size:12px;}
+.bar-row .day{color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;}
+.bar-row .track{position:relative;height:18px;background:transparent;}
+.bar-row .fill{height:100%;background:var(--teal);position:relative;}
+.bar-row.peak .fill{background:var(--terra);}
+.bar-row .amt{text-align:right;color:var(--ink);font-weight:500;}
+.daily-side{border-left:1px solid var(--rule);padding-left:32px;display:flex;
+  flex-direction:column;justify-content:center;gap:18px;}
+.daily-stat .label{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--muted);
+  text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;}
+.daily-stat .value{font-family:"IBM Plex Mono",monospace;font-size:24px;color:var(--ink);}
+.daily-stat .value .small{font-size:13px;color:var(--muted);}
+
+.alloc{display:flex;width:100%;height:44px;border:1px solid var(--ink);overflow:hidden;}
+.alloc .seg{position:relative;border-right:1px solid var(--paper);}
+.alloc .seg:last-child{border-right:none;}
+.alloc .seg .pct{position:absolute;top:50%;left:10px;transform:translateY(-50%);
+  font-family:"IBM Plex Mono",monospace;font-size:11px;color:#fff;font-weight:500;}
+.alloc-legend{margin-top:14px;display:grid;grid-template-columns:repeat(4,1fr);gap:18px 24px;}
+.leg{border-top:1px solid var(--rule);padding-top:12px;}
+.leg .swatch{display:inline-block;width:10px;height:10px;margin-right:8px;vertical-align:1px;}
+.leg .name{font-size:13px;font-weight:600;color:var(--ink);}
+.leg .amt{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--muted);margin-top:4px;}
+
+.cards{display:flex;flex-direction:column;gap:0;border-top:1px solid var(--rule);}
+.card{display:grid;grid-template-columns:32px 1fr auto;gap:24px;align-items:center;
+  padding:18px 8px;border-bottom:1px solid var(--rule);transition:background 120ms ease;}
+.card:hover{background:var(--paper-2);}
+.card .rank{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);}
+.card .body{display:flex;flex-direction:column;gap:4px;min-width:0;}
+.card .title{font-size:15px;font-weight:600;color:var(--ink);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;}
+.card .meta{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);
+  text-transform:uppercase;letter-spacing:0.06em;}
+.card .right{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px;}
+.card .right .figure{font-family:"IBM Plex Mono",monospace;font-size:18px;color:var(--ink);}
+.card .right .sub{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);}
+
+.cv-card{display:grid;grid-template-columns:32px 1.4fr 1fr 1fr auto;gap:24px;align-items:center;
+  padding:18px 8px;border-bottom:1px solid var(--rule);transition:background 120ms ease;}
+.cv-card:hover{background:var(--paper-2);}
+.cv-card .label{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--muted);
+  text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;}
+.cv-card .v{font-family:"IBM Plex Mono",monospace;font-size:14px;color:var(--ink);}
+.cv-bar{position:relative;height:8px;background:var(--rule);margin-top:6px;}
+.cv-bar .cost{position:absolute;left:0;top:0;height:100%;background:var(--ink);}
+.cv-bar .value{position:absolute;left:0;top:0;height:100%;background:var(--teal);opacity:0.85;}
+.cv-card .lev{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:24px;
+  color:var(--teal);text-align:right;}
+.cv-card .lev .small{font-size:13px;color:var(--muted);font-weight:500;}
+
+.method{margin-top:48px;padding:32px;background:var(--paper-2);border:1px solid var(--rule);}
+.method h3{font-size:13px;font-family:"IBM Plex Mono",monospace;text-transform:uppercase;
+  letter-spacing:0.1em;color:var(--terra);margin:0 0 16px;font-weight:500;}
+.method-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:32px;}
+.method dt{font-size:14px;font-weight:600;color:var(--ink);margin-bottom:6px;}
+.method dd{margin:0 0 14px;font-size:13px;color:var(--ink-2);line-height:1.5;}
+.method .formula{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink);
+  background:var(--paper);border:1px solid var(--rule);padding:6px 8px;
+  display:inline-block;margin-top:4px;}
+
+footer{margin-top:72px;padding-top:24px;border-top:2px solid var(--ink);display:flex;
+  justify-content:space-between;align-items:flex-end;font-family:"IBM Plex Mono",monospace;
+  font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;}
+footer .colophon{max-width:48ch;line-height:1.6;}
+footer .pg{font-weight:600;color:var(--ink);font-size:14px;}
+
+@media print{
+  body{background:#fff;}
+  .ribbon{background:#000;}
+  .page{padding:0 16mm;}
+  .card:hover,.cv-card:hover{background:transparent;}
+  .hero-figure{font-size:140px;}
+  .sec{page-break-inside:avoid;}
 }
-.topbar { background: var(--topbar); color: #fff; padding: 16px 32px;
-          display: flex; align-items: center; gap: 22px; }
-.topbar .brand { font-family: 'JetBrains Mono', monospace; font-weight: 600;
-                 font-size: 14px; letter-spacing: -0.02em; }
-.topbar .dim { color: var(--topbar-soft); }
-.topbar .spacer { flex: 1; }
-.topbar .generated { font-family: 'JetBrains Mono', monospace; font-size: 11.5px;
-                     color: var(--topbar-soft); }
-.wrap { max-width: 1100px; margin: 0 auto; padding: 36px 32px 64px; }
-h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.025em; margin: 0 0 6px; }
-.subtitle { color: var(--mute); margin: 0 0 28px; font-size: 15px; }
-.subtitle strong { color: var(--ink); font-weight: 600; }
-.kicker { font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
-          text-transform: uppercase; letter-spacing: 0.08em; color: var(--mute);
-          margin-bottom: 6px; }
-.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
-        margin-bottom: 28px; }
-@media (max-width: 800px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
-.kpi { background: #fff; border: 1px solid var(--border);
-       border-radius: var(--radius-md); padding: 16px 18px 14px; }
-.kpi .label { font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
-              text-transform: uppercase; letter-spacing: 0.08em; color: var(--mute);
-              margin-bottom: 6px; }
-.kpi .value { font-size: 26px; font-weight: 700; letter-spacing: -0.025em; line-height: 1.05; }
-.kpi .note { font-size: 12px; color: var(--mute); margin-top: 4px; }
-.kpi.accent { border-top: 3px solid var(--accent); }
-.kpi.teal   { border-top: 3px solid var(--teal); }
-.kpi.amber  { border-top: 3px solid var(--amber); }
-.kpi.purple { border-top: 3px solid var(--purple); }
-.panel { background: #fff; border: 1px solid var(--border);
-         border-radius: var(--radius-md); padding: 20px 22px 22px; margin-bottom: 18px; }
-.panel h2 { font-size: 15px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
-.panel .panel-sub { color: var(--mute); font-size: 12.5px; margin: 0 0 16px; }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px; }
-@media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
-.grid-2 .panel { margin-bottom: 0; }
-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-thead th { text-align: left; font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
-           font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em;
-           color: var(--mute); padding: 6px 6px 10px; border-bottom: 1px solid var(--border); }
-tbody td { padding: 8px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
-tbody tr:last-child td { border-bottom: 0; }
-td.num { font-family: 'JetBrains Mono', monospace; text-align: right; font-size: 12.5px; }
-td.key { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
-code { background: var(--bg-deep); padding: 1px 6px; border-radius: 4px;
-       font-family: 'JetBrains Mono', monospace; font-size: 12px; }
-.plan-banner { background: #fef3c7; border-left: 4px solid var(--amber);
-               border-radius: 0 var(--radius) var(--radius) 0; padding: 14px 22px;
-               margin: 0 0 18px; font-size: 13.5px; line-height: 1.55; color: var(--ink); }
-.plan-banner .label { display: inline-block; font-family: 'JetBrains Mono', monospace;
-                      font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em;
-                      color: var(--amber); font-weight: 600; margin-right: 8px; }
-.plan-banner strong { font-weight: 600; }
-.plan-banner .mono { font-family: 'JetBrains Mono', monospace; background: rgba(255,255,255,0.6);
-                     padding: 1px 6px; border-radius: 4px; font-size: 12.5px; }
-.footer { margin-top: 24px; padding-top: 18px; border-top: 1px dashed var(--border);
-          font-size: 12.5px; color: var(--mute); line-height: 1.6; }
-.legend { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; font-size: 12.5px; }
-.legend .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
-                  margin-right: 6px; vertical-align: middle; }
+@media (max-width:760px){
+  .page{padding:0 18px 60px;}
+  .masthead{flex-direction:column;align-items:flex-start;gap:14px;}
+  .masthead .meta{text-align:left;}
+  .hero{grid-template-columns:1fr;gap:20px;padding:36px 0 32px;}
+  .hero-figure{font-size:110px;}
+  .kpis{grid-template-columns:repeat(2,1fr);}
+  .kpi,.kpi + .kpi{padding:18px 12px;border-right:1px solid var(--rule);
+    border-bottom:1px solid var(--rule);}
+  .kpi.k-wide,.kpi.k-med,.kpi.k-narrow{grid-column:span 1;}
+  .daily{grid-template-columns:1fr;gap:24px;}
+  .daily-side{border-left:none;border-top:1px solid var(--rule);padding-left:0;
+    padding-top:20px;flex-direction:row;flex-wrap:wrap;gap:24px;}
+  .alloc-legend{grid-template-columns:repeat(2,1fr);}
+  .cv-card{grid-template-columns:24px 1fr auto;gap:14px;}
+  .cv-card .col-cost,.cv-card .col-value{display:none;}
+  .method-grid{grid-template-columns:1fr;}
+  footer{flex-direction:column;align-items:flex-start;gap:14px;}
+}
 """
 
 
 def fmt_money(n):
+    if n >= 1000:
+        return f"${n:,.0f}"
     return f"${n:,.2f}"
 
 
 def fmt_int(n):
     return f"{n:,}"
-
-
-def fmt_compact(n):
-    if n >= 1_000_000_000:
-        return f"{n/1_000_000_000:.2f}B"
-    if n >= 1_000_000:
-        return f"{n/1_000_000:.2f}M"
-    if n >= 1_000:
-        return f"{n/1_000:.1f}K"
-    return str(n)
 
 
 def read_csv(path):
@@ -136,7 +218,7 @@ def read_csv(path):
 def daily_totals(rows):
     by_day = defaultdict(float)
     for r in rows:
-        started = r.get("started", "")[:10]
+        started = (r.get("started") or "")[:10]
         if not started:
             continue
         try:
@@ -148,110 +230,42 @@ def daily_totals(rows):
 
 
 def source_totals(rows):
-    by_src = defaultdict(float)
+    by_src = defaultdict(lambda: {"cost": 0.0, "calls": 0})
     for r in rows:
         try:
             cost = float(r.get("cost_usd", 0) or 0)
         except ValueError:
-            cost = 0
-        by_src[r.get("source", "unknown")] += cost
-    return sorted(by_src.items(), key=lambda x: x[1], reverse=True)
+            cost = 0.0
+        s = r.get("source", "unknown")
+        by_src[s]["cost"] += cost
+        by_src[s]["calls"] += 1
+    return sorted(by_src.items(), key=lambda x: x[1]["cost"], reverse=True)
 
 
 def issue_totals(rows):
-    by_issue = defaultdict(lambda: {"cost": 0.0, "sessions": 0})
+    by_issue = defaultdict(lambda: {"cost": 0.0, "sessions": 0, "title": ""})
     for r in rows:
         attr = r.get("attributed_to", "")
         if not attr.startswith("issue:"):
             continue
-        key = attr[len("issue:"):]
+        key = attr.split(":", 1)[1]
         try:
             cost = float(r.get("cost_usd", 0) or 0)
         except ValueError:
-            cost = 0
+            cost = 0.0
         by_issue[key]["cost"] += cost
         by_issue[key]["sessions"] += 1
+        if not by_issue[key]["title"]:
+            by_issue[key]["title"] = (r.get("notes") or "")[:90]
     return sorted(by_issue.items(), key=lambda x: x[1]["cost"], reverse=True)
 
 
-def bar_svg(items, width=880, height=260, color="#1d4ed8"):
-    if not items:
-        return "<svg></svg>"
-    pad_l, pad_r, pad_t, pad_b = 56, 18, 16, 44
-    plot_w = width - pad_l - pad_r
-    plot_h = height - pad_t - pad_b
-    max_val = max(v for _, v in items) or 1
-    step = 4
-    grid = "".join(
-        f'<line x1="{pad_l}" y1="{pad_t + plot_h * (1 - i/step):.1f}" '
-        f'x2="{width-pad_r}" y2="{pad_t + plot_h * (1 - i/step):.1f}" '
-        f'stroke="#e2e8f0" stroke-width="1"/>'
-        for i in range(step + 1)
-    )
-    n = len(items)
-    bar_w = plot_w / max(n, 1) * 0.72
-    out = [f'<svg viewBox="0 0 {width} {height}" width="100%" preserveAspectRatio="xMidYMid meet" style="display:block;">', grid]
-    for i, (label, val) in enumerate(items):
-        cx = pad_l + (i + 0.5) * plot_w / n
-        bh = (val / max_val) * plot_h
-        y = pad_t + plot_h - bh
-        out.append(
-            f'<rect x="{cx - bar_w/2:.1f}" y="{y:.1f}" '
-            f'width="{bar_w:.1f}" height="{bh:.1f}" fill="{color}" rx="3" ry="3">'
-            f'<title>{html.escape(label)}: {fmt_money(val)}</title></rect>'
-        )
-        out.append(
-            f'<text x="{cx:.1f}" y="{y - 6:.1f}" text-anchor="middle" '
-            f'font-family="JetBrains Mono, monospace" font-size="10.5" fill="#0f172a" '
-            f'font-weight="600">{fmt_money(val) if val < 1000 else f"${val/1000:.1f}k"}</text>'
-        )
-        out.append(
-            f'<text x="{cx:.1f}" y="{height - 14:.1f}" text-anchor="middle" '
-            f'font-family="JetBrains Mono, monospace" font-size="11" fill="#94a3b8">'
-            f'{html.escape(label[-5:])}</text>'
-        )
-    for i in range(step + 1):
-        y_pos = pad_t + plot_h * (1 - i/step) + 4
-        v = max_val * i / step
-        out.append(
-            f'<text x="{pad_l - 8:.1f}" y="{y_pos:.1f}" text-anchor="end" '
-            f'font-family="JetBrains Mono, monospace" font-size="11" fill="#94a3b8">'
-            f'${v/1000:.1f}k</text>'
-        )
-    out.append("</svg>")
-    return "".join(out)
-
-
-def stacked_svg(items, width=880, height=36):
-    total = sum(v for _, v in items) or 1
-    x = 0
-    out = [f'<svg viewBox="0 0 {width} {height}" width="100%" height="{height}" preserveAspectRatio="none" style="display:block;border-radius:6px;overflow:hidden;">']
-    colors = [PALETTE["blue"], PALETTE["purple"], PALETTE["amber"], PALETTE["teal"], PALETTE["gray"], PALETTE["red"], PALETTE["green"]]
-    for i, (label, val) in enumerate(items):
-        w = (val / total) * width
-        color = colors[i % len(colors)]
-        out.append(
-            f'<rect x="{x:.2f}" y="0" width="{w:.2f}" height="{height}" fill="{color}">'
-            f'<title>{html.escape(label)}: {fmt_money(val)} ({val/total*100:.1f}%)</title></rect>'
-        )
-        x += w
-    out.append("</svg>")
-    return "".join(out)
-
-
-def legend(items):
-    total = sum(v for _, v in items) or 1
-    colors = [PALETTE["blue"], PALETTE["purple"], PALETTE["amber"], PALETTE["teal"], PALETTE["gray"], PALETTE["red"], PALETTE["green"]]
-    parts = []
-    for i, (label, val) in enumerate(items):
-        color = colors[i % len(colors)]
-        parts.append(
-            f'<span><span class="swatch" style="background:{color}"></span>'
-            f'<span style="font-weight:500;">{html.escape(label)}</span> '
-            f'<span style="color:var(--mute);font-family:JetBrains Mono,monospace;font-size:11.5px;">'
-            f'{fmt_money(val)} · {val/total*100:.1f}%</span></span>'
-        )
-    return f'<div class="legend">{"".join(parts)}</div>'
+def short_day(iso):
+    try:
+        d = datetime.fromisoformat(iso)
+        return d.strftime("%a %d").upper()
+    except Exception:
+        return iso[-5:]
 
 
 def render(cost_rows, report_rows, cost_mode, sub_cash, repo_label):
@@ -260,162 +274,329 @@ def render(cost_rows, report_rows, cost_mode, sub_cash, repo_label):
     issues = issue_totals(cost_rows)
     days = daily_totals(cost_rows)
     sessions = len(cost_rows)
-    avg_session = total / sessions if sessions else 0
-    avg_day = total / len(days) if days else 0
-    dominant_source = sources[0][0] if sources else "n/a"
-    window = ""
-    if days:
-        window = f"{days[0][0]} → {days[-1][0]}"
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    tasks = len(issues)
+    cost_per_task = total / tasks if tasks else 0
+    cost_per_session = total / sessions if sessions else 0
 
-    plan_banner = ""
-    if cost_mode == "subscription":
-        ratio_html = ""
-        if sub_cash:
-            ratio_html = (
-                f" Subscription cash spent: <span class='mono'>{fmt_money(sub_cash)}</span>. "
-                f"API-equivalent for the same work: <span class='mono'>{fmt_money(total)}</span> "
-                f"= <strong>{total/sub_cash:.1f}× leverage</strong>."
-            )
-        plan_banner = (
-            f'<div class="plan-banner"><span class="label">Heads up</span>'
-            f'Subscription plan in use. Dollar figures below are <strong>retail-equivalents</strong> '
-            f'— what the same work would cost on pay-as-you-go API rates — not your actual bill.'
-            f'{ratio_html}</div>'
+    window = f"{days[0][0]} → {days[-1][0]}" if days else "n/a"
+    now = datetime.now(timezone.utc)
+
+    # Hero: leverage if subscription, total spend if api
+    if cost_mode == "subscription" and sub_cash:
+        hero_num = f"{total / sub_cash:.0f}"
+        hero_unit = "×"
+        hero_label = "Leverage ratio — value delivered per dollar of subscription"
+        hero_blurb = (
+            f"For every <em>$1</em> of subscription cash, the team captured "
+            f"<em>{fmt_money(total/sub_cash)}</em> in token-equivalent work this window. "
+            f"Hero number is illustrative leverage — real cash is the flat subscription."
+            f"<span class='ratio-line'>{fmt_money(total)} token-equiv &nbsp;÷&nbsp; "
+            f"{fmt_money(sub_cash)} subscription</span>"
+        )
+    else:
+        hero_num = fmt_money(total).replace("$", "")
+        hero_unit = "$"
+        hero_label = "Total spend — pay-as-you-go cash basis"
+        hero_blurb = (
+            f"<em>{sessions}</em> sessions across <em>{len(sources)}</em> sources, "
+            f"window {window}."
+            f"<span class='ratio-line'>cost per session: {fmt_money(cost_per_session)}</span>"
         )
 
-    method = (
-        '<details class="panel" style="background:#dbeafe;border-left:4px solid var(--accent);">'
-        '<summary style="cursor:pointer;font-family:JetBrains Mono,monospace;font-size:11px;'
-        'text-transform:uppercase;letter-spacing:0.08em;color:var(--accent);font-weight:600;">'
-        '+ How the cost is calculated</summary>'
-        '<div style="margin-top:14px;">'
-        '<p>Anthropic charges per <strong>token</strong> (~4 chars / ¾ word). Token counts come '
-        'from the JSONL transcripts Claude Code writes for every session. Same numbers Anthropic bills against.</p>'
-        '<p>Four token types, four prices (Opus 4.7 list):</p>'
-        '<ul style="font-size:13px;line-height:1.6;">'
-        '<li><strong>Input</strong> = $15 / MTok (base)</li>'
-        '<li><strong>Output</strong> = $75 / MTok (5× input — generating costs more than reading)</li>'
-        '<li><strong>Cache read</strong> = $1.50 / MTok (0.1× input — cheap reuse)</li>'
-        '<li><strong>Cache write 5m / 1h</strong> = $18.75 / MTok (1.25× input — one-time setup)</li>'
-        '</ul>'
-        '<p>Per-session cost = Σ (tokens × rate ÷ 1M) across all four types. '
-        'Rate table lives in <code>src/avt/spend.py</code> — update when Anthropic publishes new prices.</p>'
-        '<p>Non-Claude sources (Anthropic API CSV, Copilot seats, vendor CSV) use their own rate cards. '
-        'Cross-vendor totals are sums of cash-equivalent USD across all sources.</p>'
-        '</div></details>'
+    # Ribbon
+    if cost_mode == "subscription":
+        ribbon = (
+            '<div class="ribbon" role="note" aria-label="Subscription mode">'
+            '<div class="ribbon-inner">'
+            '<span><span class="dot"></span><strong>Subscription mode</strong></span>'
+            '<span class="sep">/</span>'
+            f'<span>Cash basis &nbsp;<strong>{fmt_money(sub_cash or 0)} / month</strong></span>'
+            '<span class="sep">/</span>'
+            f'<span>Dominant: <strong>{html.escape(sources[0][0]) if sources else "n/a"}</strong></span>'
+            '<span class="sep">/</span>'
+            f'<span>Window <strong>{window}</strong></span>'
+            '</div></div>'
+        )
+    else:
+        ribbon = (
+            '<div class="ribbon" role="note" aria-label="API mode">'
+            '<div class="ribbon-inner">'
+            '<span><span class="dot"></span><strong>API mode (cash)</strong></span>'
+            '<span class="sep">/</span>'
+            f'<span>Sources: <strong>{len(sources)}</strong></span>'
+            '<span class="sep">/</span>'
+            f'<span>Window <strong>{window}</strong></span>'
+            '</div></div>'
+        )
+
+    # KPI strip
+    kpis = (
+        '<section class="kpis" aria-label="Key performance indicators">'
+        '<div class="kpi k-wide">'
+        '<div class="label">' + ("Total spend (cash)" if cost_mode == "subscription" else "Total spend") + '</div>'
+        f'<div class="value">{fmt_money(sub_cash if cost_mode == "subscription" and sub_cash else total)}</div>'
+        f'<div class="sub">' + ("Flat subscription · no per-token overage" if cost_mode == "subscription"
+                                 else f"{sessions} sessions · {len(sources)} sources") + '</div>'
+        '</div>'
+        '<div class="kpi k-med">'
+        '<div class="label">Token-equivalent</div>'
+        f'<div class="value">{fmt_money(total)}</div>'
+        f'<div class="sub">If billed per-token over window</div>'
+        '</div>'
+        '<div class="kpi k-med">'
+        '<div class="label">Cost / task</div>'
+        f'<div class="value">{fmt_money(cost_per_task)}</div>'
+        f'<div class="sub">{tasks} attributed tasks (productivity)</div>'
+        '</div>'
+        '<div class="kpi k-narrow">'
+        '<div class="label">Sessions</div>'
+        f'<div class="value">{fmt_int(sessions)}</div>'
+        f'<div class="sub">{fmt_money(cost_per_session)} avg / session</div>'
+        '</div>'
+        '</section>'
     )
 
-    kpis = (
-        '<div class="kpis">'
-        f'<div class="kpi accent"><div class="label">Total spend</div>'
-        f'<div class="value">{fmt_money(total)}</div>'
-        f'<div class="note">{fmt_money(avg_day)} / day average</div></div>'
-        f'<div class="kpi teal"><div class="label">Sessions / rows</div>'
-        f'<div class="value">{fmt_int(sessions)}</div>'
-        f'<div class="note">{fmt_money(avg_session)} avg per row</div></div>'
-        f'<div class="kpi purple"><div class="label">Sources</div>'
-        f'<div class="value">{len(sources)}</div>'
-        f'<div class="note">dominant: {html.escape(dominant_source)}</div></div>'
-        f'<div class="kpi amber"><div class="label">Attributed issues</div>'
-        f'<div class="value">{fmt_int(len(issues))}</div>'
-        f'<div class="note">top: #{html.escape(issues[0][0]) if issues else "n/a"}</div></div>'
-        '</div>'
-    )
+    # Daily horizontal bars (last up to 14 days)
+    show_days = days[-14:] if len(days) > 14 else days
+    if show_days:
+        max_day = max(c for _, c in show_days) or 1
+        peak_day, peak_cost = max(show_days, key=lambda x: x[1])
+        bars = []
+        for day, cost in show_days:
+            pct = (cost / max_day) * 100
+            peak_class = " peak" if day == peak_day else ""
+            bars.append(
+                f'<div class="bar-row{peak_class}">'
+                f'<span class="day">{html.escape(short_day(day))}</span>'
+                f'<div class="track"><div class="fill" style="width:{pct:.0f}%"></div></div>'
+                f'<span class="amt">{fmt_money(cost)}</span></div>'
+            )
+        daily_bars = "".join(bars)
+        daily_total = sum(c for _, c in show_days)
+        try:
+            pk_short = datetime.fromisoformat(peak_day).strftime("%a %d")
+        except Exception:
+            pk_short = peak_day
+        side = (
+            '<aside class="daily-side">'
+            f'<div class="daily-stat"><div class="label">Window total</div>'
+            f'<div class="value">{fmt_money(daily_total)}</div></div>'
+            f'<div class="daily-stat"><div class="label">Peak day</div>'
+            f'<div class="value">{pk_short} <span class="small">{fmt_money(peak_cost)}</span></div></div>'
+            f'<div class="daily-stat"><div class="label">Active days</div>'
+            f'<div class="value">{len(show_days)} <span class="small">of {len(days)}</span></div></div>'
+            '</aside>'
+        )
+    else:
+        daily_bars = ""
+        side = ""
 
     daily_panel = (
-        '<div class="panel"><h2>Daily spend</h2>'
-        f'<p class="panel-sub">USD per UTC day across all enabled sources. Window: {window}.</p>'
-        f'{bar_svg(days)}</div>'
+        '<section class="sec" aria-labelledby="sec-daily">'
+        '<div class="sec-head">'
+        '<span class="sec-num">§ 01</span>'
+        '<h2 class="sec-title" id="sec-daily">Daily token-equivalent spend</h2>'
+        '<span class="sec-rule"></span>'
+        f'<span class="sec-note">USD · {len(show_days)} days</span>'
+        '</div>'
+        '<p class="sec-lede">Daily token-equivalent cost from the unified cost CSV. '
+        'On a flat subscription this is virtual — useful for routing and capacity, not finance.</p>'
+        f'<div class="daily"><div class="daily-bars" role="img" aria-label="Daily bars">{daily_bars}</div>{side}</div>'
+        '</section>'
     )
 
-    source_panel = (
-        '<div class="panel"><h2>Spend by source</h2>'
-        '<p class="panel-sub">Where the money goes across vendors.</p>'
-        f'{stacked_svg(sources)}{legend(sources)}</div>'
-    )
-
-    if issues:
-        rows_html = "".join(
-            f'<tr><td class="key">#{html.escape(k)}</td>'
-            f'<td class="num">{v["sessions"]}</td>'
-            f'<td class="num">{fmt_money(v["cost"])}</td></tr>'
-            for k, v in issues[:15]
+    # Source allocation
+    if sources:
+        src_total = sum(s["cost"] for _, s in sources) or 1
+        segs = []
+        legs = []
+        for i, (name, info) in enumerate(sources[:6]):
+            pct = info["cost"] / src_total * 100
+            color = SEG_COLORS[i % len(SEG_COLORS)]
+            segs.append(
+                f'<div class="seg" style="width:{pct:.1f}%;background:{color};">'
+                f'<span class="pct">{pct:.0f}%</span></div>'
+            )
+            legs.append(
+                f'<div class="leg"><span class="swatch" style="background:{color};"></span>'
+                f'<span class="name">{html.escape(name)}</span>'
+                f'<div class="amt">{fmt_money(info["cost"])} · {info["calls"]} rows</div></div>'
+            )
+        source_panel = (
+            '<section class="sec" aria-labelledby="sec-source">'
+            '<div class="sec-head">'
+            '<span class="sec-num">§ 02</span>'
+            '<h2 class="sec-title" id="sec-source">Where the spend went</h2>'
+            '<span class="sec-rule"></span>'
+            '<span class="sec-note">By source</span>'
+            '</div>'
+            '<p class="sec-lede">Allocation of token-equivalent spend across instrumented sources.</p>'
+            f'<div class="alloc" role="img">{"".join(segs)}</div>'
+            f'<div class="alloc-legend">{"".join(legs)}</div>'
+            '</section>'
         )
+    else:
+        source_panel = ""
+
+    # Top issues (productivity-oriented)
+    if issues:
+        cards = []
+        for i, (issue, info) in enumerate(issues[:6], 1):
+            pct = info["cost"] / total * 100 if total else 0
+            title = info["title"] or f"Issue #{issue}"
+            cards.append(
+                '<div class="card" role="listitem">'
+                f'<span class="rank">{i:02d}</span>'
+                '<div class="body">'
+                f'<div class="title">#{html.escape(issue)} · {html.escape(title)}</div>'
+                f'<div class="meta">{info["sessions"]} sessions · {fmt_money(info["cost"]/info["sessions"])} avg</div>'
+                '</div>'
+                '<div class="right">'
+                f'<div class="figure">{fmt_money(info["cost"])}</div>'
+                f'<div class="sub">{pct:.1f}% of total</div>'
+                '</div></div>'
+            )
         issues_panel = (
-            '<div class="panel"><h2>Top issues by spend</h2>'
-            '<p class="panel-sub">Attribution via branch name and commit references.</p>'
-            '<table><thead><tr><th>Issue</th><th class="num">Sessions</th><th class="num">Spend</th></tr></thead>'
-            f'<tbody>{rows_html}</tbody></table></div>'
+            '<section class="sec" aria-labelledby="sec-issues">'
+            '<div class="sec-head">'
+            '<span class="sec-num">§ 03</span>'
+            '<h2 class="sec-title" id="sec-issues">Top issues by cost</h2>'
+            '<span class="sec-rule"></span>'
+            f'<span class="sec-note">Top {min(6, len(issues))} of {len(issues)}</span>'
+            '</div>'
+            '<p class="sec-lede">Costliest threads in the window. Productivity signal: '
+            'high-cost issues with high session counts are candidates for summarisation or scope split.</p>'
+            f'<div class="cards" role="list">{"".join(cards)}</div>'
+            '</section>'
         )
     else:
         issues_panel = ""
 
+    # Cost vs value
     value_panel = ""
     if report_rows:
-        value_rows = []
-        for r in report_rows[:15]:
+        cv_cards = []
+        for i, r in enumerate(report_rows[:6], 1):
             issue = r.get("issue") or ""
             cost = float(r.get("cost_usd", 0) or 0)
             value = float(r.get("value_score", 0) or 0)
             ratio = float(r.get("ratio", 0) or 0)
-            value_rows.append(
-                f'<tr><td class="key">#{html.escape(issue)}</td>'
-                f'<td class="num">{fmt_money(cost)}</td>'
-                f'<td class="num">{fmt_int(int(value))}</td>'
-                f'<td class="num">{ratio:.2f}</td></tr>'
+            cost_pct = (cost / total * 100) if total else 0
+            value_pct = min(100, (value / max(cost, 1)) * 5)
+            cv_cards.append(
+                '<div class="cv-card">'
+                f'<span class="rank">{i:02d}</span>'
+                '<div>'
+                '<div class="label">Issue</div>'
+                f'<div class="v"><strong style="font-family:\'Space Grotesk\',sans-serif;font-size:15px;">'
+                f'#{html.escape(issue)}</strong></div>'
+                f'<div class="cv-bar"><div class="cost" style="width:{cost_pct:.1f}%"></div>'
+                f'<div class="value" style="width:{value_pct:.1f}%"></div></div>'
+                '</div>'
+                f'<div class="col-cost"><div class="label">Cost</div><div class="v">{fmt_money(cost)}</div></div>'
+                f'<div class="col-value"><div class="label">Value score</div><div class="v">{fmt_int(int(value))}</div></div>'
+                f'<div class="lev">{ratio:.1f}<span class="small">×</span></div>'
+                '</div>'
             )
         value_panel = (
-            '<div class="panel"><h2>Cost vs value</h2>'
-            '<p class="panel-sub">Value score is a placeholder until product telemetry lands. '
-            'Treat as relative, not absolute.</p>'
-            '<table><thead><tr><th>Issue</th><th class="num">Cost</th>'
-            '<th class="num">Value score</th><th class="num">Ratio</th></tr></thead>'
-            f'<tbody>{"".join(value_rows)}</tbody></table></div>'
+            '<section class="sec" aria-labelledby="sec-cv">'
+            '<div class="sec-head">'
+            '<span class="sec-num">§ 04</span>'
+            '<h2 class="sec-title" id="sec-cv">Cost vs value, by issue</h2>'
+            '<span class="sec-rule"></span>'
+            '<span class="sec-note">Leverage per issue</span>'
+            '</div>'
+            '<p class="sec-lede">Value score from <span class="mono">report.csv</span>. '
+            'Placeholder formula until product telemetry lands — treat as directional.</p>'
+            f'<div class="cards">{"".join(cv_cards)}</div>'
+            '</section>'
         )
 
-    html_out = f"""<!doctype html>
+    method = (
+        '<section class="method" aria-labelledby="sec-method">'
+        '<h3 id="sec-method">Method &amp; assumptions</h3>'
+        '<div class="method-grid">'
+        '<dl>'
+        '<dt>Cost (cash)</dt>'
+        '<dd>Subscription mode: flat monthly outlay via <span class="mono">--sub-cash</span>. '
+        'API mode: sum of per-token costs in <span class="mono">cost.csv</span>.</dd>'
+        '<dt>Token-equivalent</dt>'
+        '<dd>What the same usage would cost on per-token rates.'
+        '<div class="formula">tok_eq = Σ(tokens × unit_price)</div></dd>'
+        '</dl>'
+        '<dl>'
+        '<dt>Productivity</dt>'
+        '<dd>Tasks resolved = unique issues attributed via branch or commit ref. '
+        'Cost per task = total ÷ tasks.</dd>'
+        '<dt>Leverage</dt>'
+        '<dd>Token-equivalent ÷ subscription cash. Useful for sub-vs-API decision.</dd>'
+        '</dl>'
+        '<dl>'
+        '<dt>Value</dt>'
+        '<dd>Placeholder formula in <span class="mono">avt-report</span>. '
+        'Replace with product-side telemetry (see telemetry spec).</dd>'
+        '<dt>Caveats</dt>'
+        '<dd>Token prices in <span class="mono">spend.py</span> are list-rate; '
+        'enterprise discounts not modelled. Branch attribution ~95% accurate.</dd>'
+        '</dl>'
+        '</div></section>'
+    )
+
+    out = f"""<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{html.escape(repo_label)} — AI cost &amp; value report</title>
+<title>{html.escape(repo_label)} — AI Value Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>{CSS}</style>
 </head><body>
-<div class="topbar">
-<span class="brand">{html.escape(repo_label)}<span class="dim">·</span> ai cost <span class="dim">/ value</span></span>
-<span class="spacer"></span>
-<span class="generated">generated {now}</span>
+{ribbon}
+<div class="page">
+<header class="masthead">
+<h1>AI Value <span class="accent">Tracker</span></h1>
+<div class="meta">
+<div class="edition">{html.escape(repo_label)}</div>
+<div>Generated {now.strftime("%Y-%m-%d %H:%M UTC")}</div>
+<div>avt-html · v0.2.0</div>
 </div>
-<div class="wrap">
-<div class="kicker">ai-value-tracker</div>
-<h1>AI cost &amp; value report</h1>
-<p class="subtitle"><strong>{fmt_int(sessions)}</strong> rows · <strong>{len(sources)}</strong> sources · window {window or "n/a"}. Dominant source: <strong>{html.escape(dominant_source)}</strong>.</p>
-{plan_banner}
-{method}
+</header>
+<div class="subhead" aria-label="Report metadata">
+<span><b>Window</b> &nbsp; {window}</span>
+<span><b>Sources</b> &nbsp; {len(sources)}</span>
+<span><b>Sessions</b> &nbsp; {fmt_int(sessions)}</span>
+<span><b>Tasks resolved</b> &nbsp; {fmt_int(tasks)}</span>
+</div>
+<section class="hero" aria-labelledby="hero-h">
+<div>
+<div class="hero-label" id="hero-h">{hero_label}</div>
+<div class="hero-figure">{hero_num}<span class="x">{hero_unit}</span></div>
+</div>
+<p class="hero-blurb">{hero_blurb}</p>
+</section>
 {kpis}
 {daily_panel}
 {source_panel}
 {issues_panel}
 {value_panel}
-<div class="footer">
-<p>Source: <code>avt-cost</code> output. Regenerate: <code>avt-html --cost out/cost.csv --report out/report.csv --out report.html</code></p>
-<p>Pricing in <code>src/avt/spend.py</code>. Method explainer above.</p>
-</div>
+{method}
+<footer>
+<div class="colophon">Produced by <strong style="color:var(--ink)">avt-html</strong>. Data: <span class="mono">cost.csv</span> (avt-cost), <span class="mono">report.csv</span> (avt-report).</div>
+<div class="pg">— 01 / 01 —</div>
+</footer>
 </div></body></html>"""
-    return html_out
+    return out
 
 
 def main():
     ap = argparse.ArgumentParser(description="Render single-page HTML cost-and-value report.")
-    ap.add_argument("--cost", required=True, help="avt-cost CSV path.")
-    ap.add_argument("--report", default=None, help="avt-report CSV path (optional).")
-    ap.add_argument("--out", required=True, help="HTML output path.")
+    ap.add_argument("--cost", required=True)
+    ap.add_argument("--report", default=None)
+    ap.add_argument("--out", required=True)
     ap.add_argument("--cost-mode", choices=["api", "subscription"], default="api")
     ap.add_argument("--sub-cash", type=float, default=None)
-    ap.add_argument("--label", default="Harris · Wraith", help="Topbar label.")
+    ap.add_argument("--label", default="Harris · Wraith")
     args = ap.parse_args()
 
     cost_rows = read_csv(args.cost)
@@ -424,8 +605,8 @@ def main():
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     with open(args.out, "w") as f:
         f.write(out)
-    print(f"Wrote {args.out} ({len(out):,} bytes, {len(cost_rows)} cost rows, {len(report_rows)} value rows)",
-          file=sys.stderr)
+    print(f"Wrote {args.out} ({len(out):,} bytes, {len(cost_rows)} cost rows, "
+          f"{len(report_rows)} value rows)", file=sys.stderr)
 
 
 if __name__ == "__main__":
