@@ -4,7 +4,7 @@ Once a product instrumented with AI-vs-human action logging is connected,
 this module reads the events and produces a per-issue value CSV that
 replaces value_score in report.py.
 
-The event schema is documented in docs/wraith-telemetry-spec.md.
+The event schema is documented in docs/telemetry-spec.md.
 
 Usage (once table exists):
     avt-telemetry --db-url <conn> --issue 8579 --since 2026-04-01
@@ -19,7 +19,7 @@ import sys
 EXPECTED_SCHEMA = """
 Table: ai_action_event
   id              uuid PK
-  tenant_id       uuid       -- tenant-scoped, per Wraith CLAUDE.md rule 8
+  tenant_id       uuid       -- tenant-scoped; never leak across customers
   feature_key     text       -- e.g. 'email-intake', 'allegation-draft'
   issue_number    int        -- the GitHub issue this feature traces to
   case_id         uuid NULL
@@ -45,9 +45,9 @@ def main():
         print(EXPECTED_SCHEMA)
         return
 
-    print("telemetry reader is a stub until the ai_action_event table lands in Wraith.", file=sys.stderr)
+    print("telemetry reader is a stub until the ai_action_event table lands in your product.", file=sys.stderr)
     print("Run `avt-telemetry --print-schema` for the expected schema.", file=sys.stderr)
-    print("Spec: docs/wraith-telemetry-spec.md", file=sys.stderr)
+    print("Spec: docs/telemetry-spec.md", file=sys.stderr)
     sys.exit(2)
 
 

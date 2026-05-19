@@ -23,7 +23,8 @@ PRICES = {
     "claude-haiku-4-5":   {"in":  0.80, "out":  4.00, "cache_w":  1.00, "cache_r": 0.08},
 }
 
-DEFAULT_PROJECT = "/Users/aoreilly/.claude/projects/-Users-aoreilly-Repos-Wraith"
+_HOME = os.path.expanduser("~")
+DEFAULT_PROJECT = os.environ.get("AVT_PROJECT", os.path.join(_HOME, ".claude", "projects"))
 ISSUE_RE = re.compile(r"issue[-_/](\d+)", re.IGNORECASE)
 COMMIT_ISSUE_RE = re.compile(r"#(\d{2,6})\b")
 
@@ -141,6 +142,19 @@ def git_branch_at(cwd, when_iso):
     return best
 
 
+def git_user(cwd):
+    if not cwd or not Path(cwd).is_dir():
+        return None
+    try:
+        r = subprocess.run(
+            ["git", "-C", cwd, "config", "user.email"],
+            capture_output=True, text=True, timeout=3,
+        )
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return None
+    return r.stdout.strip() or None
+
+
 def issue_from_branch(branch):
     if not branch:
         return None
@@ -182,7 +196,12 @@ def main():
         sys.exit(1)
 
     rows = []
-    for jsonl in project_dir.glob("*.jsonl"):
+    jsonl_files = list(project_dir.glob("*.jsonl"))
+    if not jsonl_files:
+        for sub in project_dir.iterdir():
+            if sub.is_dir():
+                jsonl_files.extend(sub.glob("*.jsonl"))
+    for jsonl in jsonl_files:
         mtime = datetime.fromtimestamp(jsonl.stat().st_mtime, tz=timezone.utc)
         if mtime < cutoff:
             continue
@@ -194,12 +213,14 @@ def main():
             continue
         branch = git_branch_at(info["cwd"], info["start_ts"])
         issue = issue_from_branch(branch) or issue_from_commits(info["cwd"], branch) or ""
+        user = git_user(info["cwd"]) or ""
         rows.append({
             "session_id": jsonl.stem,
             "started": info["start_ts"] or "",
             "cwd": info["cwd"] or "",
             "branch": branch or "",
             "issue": issue,
+            "user": user,
             "title": (info["title"] or info["first_prompt"] or "").replace("\n", " "),
             "cost_usd": round(cost, 4),
             "tokens_in": ti,
@@ -216,7 +237,7 @@ def main():
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
         out = open(args.out, "w", newline="")
     writer = csv.DictWriter(out, fieldnames=[
-        "session_id", "started", "cwd", "branch", "issue", "title",
+        "session_id", "started", "cwd", "branch", "issue", "user", "title",
         "cost_usd", "tokens_in", "tokens_out", "tokens_cache_w", "tokens_cache_r",
     ])
     writer.writeheader()

@@ -1,34 +1,95 @@
-# ai-value-tracker
+<div align="center">
 
-![python](https://img.shields.io/badge/python-3.11%2B-blue)
-![license](https://img.shields.io/badge/license-MIT-green)
-![status](https://img.shields.io/badge/status-alpha-orange)
+# 📊 AI Value Tracker
 
-Measures Claude Code AI spend against the customer value it produces. Answers the question "is the AI investment paying back?" with numbers, per feature, per week. Drops a CSV and a bar chart in your inbox every Monday.
+**Turn your AI spend into a story you can defend.**
 
-Built because asking "how much are we spending on Claude?" gets a number, asking "what did it produce?" gets a story. This turns the story into a number.
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-3a362f)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-0a4f4a)](LICENSE)
+[![Status: alpha](https://img.shields.io/badge/status-alpha-c8602a)](#)
 
-## What you get
+*Cost in. Value out. Ratio over time. Per feature, per user, per team.*
 
-A single command that walks your Claude Code session logs, joins them to the GitHub issues they belong to, pulls the PR stats those issues produced, and emits one CSV row per issue with cost and value side by side.
+</div>
 
+---
+
+## The pitch
+
+Anyone can run `claude /cost`. Few can answer "and what did it produce?"
+
+This tool joins every dollar of AI spend (Claude Code, the Anthropic API, GitHub Copilot, any vendor with a CSV) to the work it actually generated (issues, PRs, lines, eventually product telemetry) and renders the answer as a single editorial HTML report — the kind of one-pager you can put in a Monday email to leadership.
+
+If your team is on a flat subscription, it tells you the leverage ratio: **"$200 cash bought $8,016 of token-equivalent work this week — that's 40× leverage."** If you're paying per token, it tells you which features are eating the bill.
+
+![Editorial cost report](docs/screenshot.png)
+
+---
+
+## ⚡ 90-second tour
+
+```bash
+git clone https://github.com/ao92265/ai-value-tracker
+cd ai-value-tracker && make install
+source .venv/bin/activate
+
+# Render the report against the bundled demo data
+avt-html --cost examples/demo-cost.csv \
+         --report examples/demo-report.csv \
+         --cost-mode subscription --sub-cash 200 \
+         --out out/report.html
+open out/report.html
 ```
-issue   branch                       sessions  cost_usd  prs_merged  lines_added  value_score  ratio
-#7922   feat/issue-7922-foo                45   3944.42           2          634         1261   0.32
-#6830   feat/issue-6830-bar                12   1015.53           1          313          581   0.57
+
+That's the whole pitch. Real numbers come next.
+
+---
+
+## Use it on your own data
+
+```bash
+# Cost side — walks every Claude Code session you've ever run
+avt-cost --claude --days 30 --cost-mode subscription --sub-cash 200 \
+         --out out/cost.csv
+
+# Value side — pulls PR stats from any GitHub repo you point it at
+export AVT_REPO=owner/name
+avt-value --days 30 --out out/value.csv
+
+# Join + render
+avt-report --spend out/cost.csv --value out/value.csv \
+           --out out/joined.csv
+avt-html  --cost out/cost.csv --report out/joined.csv \
+          --cost-mode subscription --sub-cash 200 \
+          --out out/report.html
 ```
 
-Plus a bar chart of the top N issues by spend, with value scored alongside.
+Or weekly via cron:
 
-## Why bother
+```bash
+0 9 * * 1  $HOME/Repos/ai-value-tracker/bin/avt-weekly >> /tmp/avt-weekly.log 2>&1
+```
 
-Three reasons.
+---
 
-**Cost without attribution is unmanageable.** "Last month was $27k" is a panic number. "Issue #7922 was $3.9k, shipped 2 PRs, 634 lines" is a decision.
+## What the report actually shows
 
-**Fast feedback on routing.** If sonnet sessions are producing the same ratio as opus sessions on the same kind of work, route more work to sonnet.
+The editorial layout (Space Grotesk on paper-tone, terra & teal accents — no enterprise-SaaS slate) puts the hero number where leadership needs it and lets the long tail trail underneath.
 
-**Commercial conversation starter.** Once product-side telemetry is wired (see `docs/wraith-telemetry-spec.md`), `value_score` becomes "minutes of reviewer time saved" or "drafts accepted." That's the number for pricing conversations.
+| Section | What it answers |
+|---|---|
+| **Hero** | Leverage ratio (`137×`) in subscription mode, or total spend in API mode. |
+| **Ribbon + KPIs** | Cash basis · token-equivalent · cost per task · session volume. Productivity is a first-class metric. |
+| **§ 01 Daily spend** | Horizontal bars with peak-day highlight. 7 to 14 days. |
+| **§ 02 Where the spend went** | Single allocation bar across every vendor source you've enabled. |
+| **§ 03 Top issues by cost** | Costliest tickets, with productivity hints (long threads = candidates for split). |
+| **§ 04 Top users by cost** | Team breakdown from `git config user.email`. Each contributor runs the tool, the team picture composes itself. |
+| **§ 05 Cost vs value** | Per-issue leverage. Placeholder formula until product telemetry lands. |
+| **Method** | Explains every number so nobody can wave it away. |
+
+Print-friendly. Single self-contained HTML. No JS, no build step, no external assets beyond Google Fonts.
+
+---
 
 ## Cost sources
 
@@ -36,130 +97,51 @@ AI spend lives in more places than just Claude Code. `avt-cost` unifies them.
 
 | Source | Adapter | Status |
 |---|---|---|
-| Claude Code (JSONL logs) | `--claude` | shipped |
-| Anthropic API (console CSV export) | `--anthropic-csv <path>` | shipped |
-| GitHub Copilot (admin API per seat) | `--copilot-org <org>` | shipped |
-| Generic vendor (any CSV: Intercom Fin, Gong, Cursor, OpenAI, etc.) | `--vendor-csv <path> --vendor-source <name>` | shipped |
+| Claude Code (JSONL logs across **every project**) | `--claude` | ✅ |
+| Anthropic API (console CSV export) | `--anthropic-csv <path>` | ✅ |
+| GitHub Copilot (admin API, per seat) | `--copilot-org <org>` | ✅ |
+| Generic vendor CSV (Cursor / Gong / Intercom Fin / OpenAI / anything) | `--vendor-csv <path> --vendor-source <name>` | ✅ |
 | Azure billing AI resource group | `--azure-billing` | planned |
-| OpenAI usage API | `--openai` | planned |
+| OpenAI usage API direct | `--openai` | planned |
 
 Run any combination in one shot:
 
 ```bash
 avt-cost --claude --days 30 \
          --anthropic-csv anthropic-export.csv \
-         --copilot-org harriscomputer \
+         --copilot-org your-org \
          --vendor-csv gong-bill.csv --vendor-source gong \
          --out out/cost.csv
 ```
 
-Output is one unified CSV with a `source` column, plus a percentage breakdown by source on stderr.
+Output is one unified CSV with a `source` column, plus a percentage breakdown on stderr.
+
+---
 
 ## How it works
 
 ```
-~/.claude/projects/<project>/*.jsonl   →  avt-spend  →  spend.csv
-                                                          ↓
-GitHub repo (gh CLI)                   →  avt-value  →  value.csv
-                                                          ↓
-                                          avt-report → report.csv + chart.png
+~/.claude/projects/**/*.jsonl   →  avt-cost  →  cost.csv
+GitHub repo (gh CLI)            →  avt-value →  value.csv
+                                                  ↓
+                                  avt-report →  joined.csv
+                                                  ↓
+                                  avt-html   →  report.html
 ```
 
-Spend side reads Claude Code's per-session JSONL logs, sums token usage per session, multiplies by approximate model pricing, and attributes the session to a branch via git reflog timestamp matching. Branch then maps to an issue number (from branch name or commit `#NNNN` references).
+**Spend** walks every project under `~/.claude/projects/`, sums token usage per session, multiplies by pricing in `src/avt/spend.py`, attributes the session to a branch via git reflog timestamp matching, then to an issue via branch name or commit `#NNNN` references, then to a user via `git config user.email` at the session cwd.
 
-Value side reads the GitHub repo via `gh`, pulls every PR that references each issue, and sums lines changed, files touched, PR merge state.
+**Value** reads any GitHub repo via `gh`, pulls every PR that references each issue, sums lines / files / merge state.
 
-Report side joins on issue number, computes a placeholder `value_score = lines + (merged_prs × 200)`, and writes CSV + bar chart.
+**Report** joins on issue number, computes `value_score`, writes CSV.
 
-The placeholder formula is deliberately simple. Replace it with the real customer-recognised measure once you have product telemetry.
+**HTML** renders the single-page editorial report from those CSVs.
 
-## Install
+---
 
-```bash
-git clone https://github.com/ao92265/ai-value-tracker
-cd ai-value-tracker
-make install
-```
+## The subscription gotcha
 
-Requires Python 3.11+, `gh` CLI authenticated, and a Claude Code project directory with JSONL logs.
-
-## Use
-
-One-shot for the last 30 days:
-
-```bash
-source .venv/bin/activate
-avt-spend  --days 30 --out out/spend.csv
-avt-value  --days 30 --out out/value.csv  --repo i2group-FIS/Wraith
-avt-report --spend out/spend.csv --value out/value.csv \
-           --out out/report.csv --chart out/chart.png --top 20
-```
-
-Or just:
-
-```bash
-make report
-```
-
-Or weekly cron (snapshots to `~/.claude/observatory-logs/avt/YYYY-MM-DD/`):
-
-```bash
-0 9 * * 1  /Users/you/Repos/ai-value-tracker/bin/avt-weekly >> /tmp/avt-weekly.log 2>&1
-```
-
-## Configure
-
-**Project directory.** `avt-spend --project /Users/you/.claude/projects/-your-project-here`. Default is hard-coded to Wraith. Change it in `src/avt/spend.py:DEFAULT_PROJECT` or pass `--project` every time.
-
-**Repo.** `avt-value --repo owner/repo`. Default `i2group-FIS/Wraith`. Override per call.
-
-**Pricing.** `src/avt/spend.py` top of file. USD per million tokens, per model. Update when Anthropic changes prices.
-
-**Value formula.** `src/avt/report.py:value_score()`. Default is a code-volume proxy. Swap it for whatever you actually care about.
-
-## Output
-
-`report.csv`:
-
-| Column | Meaning |
-|---|---|
-| `issue` | GitHub issue number, or `(unattributed)` |
-| `branch` | First branch seen for this issue |
-| `sessions` | Claude Code sessions in window |
-| `cost_usd` | Sum of all session costs |
-| `prs_open` / `prs_merged` / `prs_closed` | PR counts referencing this issue |
-| `lines_added` / `lines_removed` / `files_changed` | Sum across PRs |
-| `value_score` | Placeholder. Replace. |
-| `ratio` | `value_score / cost_usd` |
-
-`chart.png`: dual-axis bar chart, top N issues by spend, cost (red) and value (green) side by side.
-
-## Product telemetry
-
-The CSV is half the story. Lines of code is not value. The other half is product-side telemetry: when a user accepts an AI-drafted field, edits it, or rejects it. That signal is what should drive `value_score`.
-
-Spec is in [`docs/wraith-telemetry-spec.md`](docs/wraith-telemetry-spec.md). Prisma schema, endpoint, permission, rollout. Once it ships, `avt.telemetry` reads from it and replaces the placeholder.
-
-## FAQ
-
-### Can't I just look at the Claude Code dashboard?
-
-For a single tool, single user, yes. `claude /cost`, the native dashboard, and `~/Repos/claude-observatory` cover that.
-
-This tool adds four things native doesn't:
-
-1. **Per-issue attribution.** Native says "Tuesday cost $200." This says "Issue #7922 cost $3.9k across the week, attributed via branch + git reflog."
-2. **Cross-vendor unification.** Claude dashboard + Copilot UI + Anthropic console + Cursor portal + vendor invoice = 5 places. This puts them in one CSV with a `source` column.
-3. **Cost-vs-value join.** Native shows cost. Doesn't pull GitHub PRs against the spend window and compute a ratio.
-4. **Per-tenant value attribution.** Once product telemetry lands, native can't tell you "Jersey tenant generated $X of AI value." This will.
-
-If your use case is "I want to see my Claude bill", use `claude /cost`. If it's "the CFO is asking where the AI money went and what it produced", use this.
-
-### What if we're on a flat subscription, not the API?
-
-Read carefully — this is the most common misuse.
-
-If your team is on Claude Max ($200/mo flat), Claude Pro, or Copilot Business ($19/seat), the per-token numbers this tool prints are **hypothetical**. They are "what this would cost on the API at list price." Actual cash is the subscription.
+If your team is on Claude Max, Claude Pro, or Copilot Business, the per-token numbers this tool prints are **hypothetical** — what the same work would cost on the API at list price. Actual cash is the subscription.
 
 Run with the right mode:
 
@@ -167,67 +149,82 @@ Run with the right mode:
 avt-cost --claude --cost-mode subscription --sub-cash 200
 ```
 
-Output then includes a banner plus a ratio:
+You get:
 
 ```
 HYPOTHETICAL COST MODE (subscription plan in use)
-Numbers below are token-equivalent API cost, not cash.
 
-Total: $4682.99 across 55 rows
+Total: $8,015.94 across 93 sessions
 
-Hypothetical API-equivalent: $4682.99
+Hypothetical API-equivalent: $8,015.94
 Real subscription cash:      $200.00
-Ratio (hypothetical/cash):   23.41x
+Leverage ratio:              40.08×
 ```
 
-The hypothetical number is still useful for:
+A 40× ratio says "stay on the sub." A 0.4× ratio says "switch to API." Either way the answer is in the report.
 
-- **Routing.** "This task burned $80 of opus-equivalent and could've been $12 of sonnet-equivalent" is actionable even if you paid neither in cash.
-- **Capacity planning.** Flat sub doesn't mean infinite throughput. Token-equivalent flags when you'll hit throttling.
-- **Per-feature comparison.** Ratio between features is meaningful even when absolute is hypothetical.
-- **Sub-vs-API decision.** A 23x ratio says "stay on the sub." A 0.4x ratio says "switch to API."
+---
 
-Use `--cost-mode api` (default) only when you actually pay per token.
+## Team-wide picture
 
-### When does this tool earn its keep?
+Each contributor runs `avt-cost --claude` against their own machine. The tool tags every session with `git config user.email`, so when the CSVs are merged (centrally or in a shared bucket), the **§ 04 Top users by cost** panel composes itself.
 
-| Scenario | Native enough? | Use this? |
-|---|---|---|
-| Solo dev curious about session cost | yes | overkill |
-| BU with mixed Max/API users | partial | useful for attribution |
-| BU pitching outcome pricing to a customer | no | needed (value side) |
-| Multi-BU report to leadership | no (5 dashboards) | needed (unification) |
-| Finance asking "did we save the $1M we promised?" | no | needed (cost-vs-value) |
-| Quarterly per-tenant pricing review | no | needed (telemetry) |
+No central agent. No telemetry endpoint. No log shipping. Just CSVs.
 
-### Is the value side useful before product telemetry lands?
+If you want a single team-wide rollup, point a shared CI job at a checkout that aggregates each contributor's exported CSV:
 
-Partially. Today `value_score = lines + (merged_prs × 200)`. That's a code-volume proxy. Acceptable as a relative measure between features. Not acceptable as an absolute "did AI pay back" number.
+```bash
+cat alice-cost.csv bob-cost.csv carol-cost.csv > team-cost.csv
+avt-html --cost team-cost.csv --out team-report.html ...
+```
 
-For the absolute number, ship the product telemetry described in `docs/wraith-telemetry-spec.md`. Until then, treat the ratio as directional, not financial.
+---
 
-### Why not Azure DevOps / GitLab / Jira out of the box?
+## FAQ
 
-`avt-value` is the only GitHub-specific module today. Spend side runs on any project. Other VCS adapters are ~100 lines each. PRs welcome (see `CONTRIBUTING.md`).
+### How is this different from `claude /cost` or `claude-observatory`?
 
-### What about pricing accuracy?
+`claude /cost` and [claude-observatory](https://github.com/ao92265/claude-observatory) cover the spend side superbly. AI Value Tracker adds:
 
-Token prices in `src/avt/spend.py` are list-price as of late 2025. They will drift. Update the dict when Anthropic publishes new prices. Enterprise volume discounts are not modelled — apply a flat multiplier downstream if needed.
+1. **Cross-vendor unification.** Five vendor dashboards collapse into one CSV with a `source` column.
+2. **Per-issue attribution.** Spend mapped to tickets via branch + commit refs.
+3. **Per-user attribution.** Spend mapped to humans via `git config user.email`.
+4. **Cost-vs-value join.** PR output joined to spend, ratio computed.
+5. **Editorial HTML report.** Designed to be emailed to leadership, not poked at in a CLI.
+6. **Subscription leverage mode.** Sub-vs-API decision with a real number.
+
+If you want hook-level observability and waste-finding, use claude-observatory. If you want the report that answers "is the AI investment paying back," use this.
+
+### What about VCS that isn't GitHub?
+
+`avt-value` is the only GitHub-specific module today. The spend side runs on any project. Other VCS adapters are ~100 lines each. PRs welcome.
+
+### Is `value_score` real?
+
+Not yet. Today it's `lines + (merged_prs × 200)` — directional only. For absolute numbers, ship the product telemetry in [`docs/telemetry-spec.md`](docs/telemetry-spec.md), then swap the formula in `report.py`.
+
+### Pricing accuracy?
+
+Token prices in `src/avt/spend.py` are list rate as of late 2025. They drift. Update when needed. Enterprise volume discounts are not modelled.
 
 ### What this is NOT
 
 - Not a billing system. Talks to vendor invoices, doesn't replace them.
-- Not an observability tool. Use `~/Repos/claude-observatory` for hook-level / waste analysis.
-- Not a real-time dashboard. Daily/weekly batch.
-- Not a finance system of record. Numbers in hypothetical mode are not auditable.
+- Not real-time. Daily/weekly batch.
+- Not a finance system of record. Numbers in hypothetical mode aren't auditable.
+- Not a hook tracer. Use claude-observatory for that.
 
-## What it doesn't do yet
+---
 
-- Pricing is approximate. Pre-launch model variants might be off.
-- Branch attribution uses git reflog timestamps near the session start. Sessions started before a checkout get attributed to the previous branch. About 5 percent noise.
-- `value_score` is a stand-in. The real number comes from product telemetry.
-- No tests. v0.1.
-- No web UI. CSV plus PNG.
+## Configuration
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `AVT_PROJECT` | `~/.claude/projects` | Root directory to walk for JSONL sessions. |
+| `AVT_REPO` | _(unset)_ | GitHub repo (`owner/name`) for `avt-value`. |
+| `AVT_OUT` | `~/.claude/observatory-logs/avt` | Where `avt-weekly` snapshots land. |
+
+---
 
 ## Layout
 
@@ -238,17 +235,30 @@ ai-value-tracker/
 ├── CONTRIBUTING.md
 ├── Makefile
 ├── pyproject.toml
-├── bin/avt-weekly             cron-friendly snapshot
-├── src/avt/
-│   ├── spend.py               JSONL → cost per session, branch, issue
-│   ├── value.py               gh → PRs, lines, files per issue
-│   ├── report.py              join + CSV + chart
-│   └── telemetry.py           product-side stub
+├── bin/avt-weekly
 ├── docs/
-│   └── wraith-telemetry-spec.md
-└── examples/weekly-cron.sh
+│   ├── screenshot.png
+│   └── telemetry-spec.md
+├── examples/
+│   ├── demo-cost.csv
+│   ├── demo-report.csv
+│   └── weekly-cron.sh
+└── src/avt/
+    ├── spend.py            JSONL → cost per session, branch, issue, user
+    ├── value.py            gh → PRs, lines, files per issue
+    ├── report.py           join + CSV
+    ├── html_report.py      editorial HTML render
+    ├── cost.py             unified multi-source cost
+    ├── telemetry.py        product-side stub
+    └── sources/
+        ├── claude_jsonl.py
+        ├── anthropic_invoice.py
+        ├── copilot_admin.py
+        └── vendor_csv.py
 ```
+
+---
 
 ## License
 
-MIT.
+MIT. Use it, fork it, ship it. Attribution welcome but not required.

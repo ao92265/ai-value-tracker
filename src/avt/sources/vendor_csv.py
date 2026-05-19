@@ -63,6 +63,7 @@ def read(csv_path, source, cols=None):
                 "started": r.get(date_col, "") if date_col else "",
                 "cost_usd": round(_num(r.get(cost_col)), 4),
                 "attributed_to": f"{attr_col or 'row'}:{attr_val}" if attr_val else source,
+                "user": attr_val if attr_val else "",
                 "units": int(_num(r.get(units_col, 0))) if units_col else 0,
                 "notes": r.get(notes_col, "") if notes_col else "",
             })

@@ -65,6 +65,7 @@ def read(org, price_per_seat=None, month_yyyy_mm=None):
             "started": month_yyyy_mm or last_active[:7],
             "cost_usd": round(price_per_seat, 2),
             "attributed_to": f"user:{login}",
+            "user": login,
             "units": 1,
             "notes": f"plan={plan} last_active={last_active}",
         })

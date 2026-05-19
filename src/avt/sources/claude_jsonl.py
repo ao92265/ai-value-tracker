@@ -9,6 +9,7 @@ from avt.spend import (
     git_branch_at,
     issue_from_branch,
     issue_from_commits,
+    git_user,
     DEFAULT_PROJECT,
 )
 
@@ -19,7 +20,12 @@ def read(project=DEFAULT_PROJECT, days=30):
     if not project_dir.is_dir():
         return []
     rows = []
-    for jsonl in project_dir.glob("*.jsonl"):
+    jsonl_files = list(project_dir.glob("*.jsonl"))
+    if not jsonl_files:
+        for sub in project_dir.iterdir():
+            if sub.is_dir():
+                jsonl_files.extend(sub.glob("*.jsonl"))
+    for jsonl in jsonl_files:
         mtime = datetime.fromtimestamp(jsonl.stat().st_mtime, tz=timezone.utc)
         if mtime < cutoff:
             continue
@@ -32,11 +38,13 @@ def read(project=DEFAULT_PROJECT, days=30):
         branch = git_branch_at(info["cwd"], info["start_ts"])
         issue = issue_from_branch(branch) or issue_from_commits(info["cwd"], branch)
         attr = f"issue:{issue}" if issue else (f"branch:{branch}" if branch else "unattributed")
+        user = git_user(info["cwd"]) or ""
         rows.append({
             "source": "claude-code",
             "started": info["start_ts"] or "",
             "cost_usd": round(cost, 4),
             "attributed_to": attr,
+            "user": user,
             "units": ti + to + cw + cr,
             "notes": (info["title"] or info["first_prompt"] or "").replace("\n", " ")[:120],
         })

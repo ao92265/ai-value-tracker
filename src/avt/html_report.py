@@ -242,6 +242,24 @@ def source_totals(rows):
     return sorted(by_src.items(), key=lambda x: x[1]["cost"], reverse=True)
 
 
+def user_totals(rows):
+    by_user = defaultdict(lambda: {"cost": 0.0, "sessions": 0, "projects": set()})
+    for r in rows:
+        u = (r.get("user") or "").strip()
+        if not u:
+            continue
+        try:
+            cost = float(r.get("cost_usd", 0) or 0)
+        except ValueError:
+            cost = 0.0
+        by_user[u]["cost"] += cost
+        by_user[u]["sessions"] += 1
+        notes = r.get("notes") or ""
+        if notes:
+            by_user[u]["projects"].add(notes[:24])
+    return sorted(by_user.items(), key=lambda x: x[1]["cost"], reverse=True)
+
+
 def issue_totals(rows):
     by_issue = defaultdict(lambda: {"cost": 0.0, "sessions": 0, "title": ""})
     for r in rows:
@@ -272,6 +290,7 @@ def render(cost_rows, report_rows, cost_mode, sub_cash, repo_label):
     total = sum(float(r.get("cost_usd", 0) or 0) for r in cost_rows)
     sources = source_totals(cost_rows)
     issues = issue_totals(cost_rows)
+    users = user_totals(cost_rows)
     days = daily_totals(cost_rows)
     sessions = len(cost_rows)
     tasks = len(issues)
@@ -472,6 +491,41 @@ def render(cost_rows, report_rows, cost_mode, sub_cash, repo_label):
     else:
         issues_panel = ""
 
+    # Top users (team attribution)
+    if users:
+        ucards = []
+        for i, (u, info) in enumerate(users[:6], 1):
+            pct = info["cost"] / total * 100 if total else 0
+            label = u.split("@")[0] if "@" in u else u
+            ucards.append(
+                '<div class="card" role="listitem">'
+                f'<span class="rank">{i:02d}</span>'
+                '<div class="body">'
+                f'<div class="title">{html.escape(label)}</div>'
+                f'<div class="meta">{html.escape(u)} · {info["sessions"]} sessions · '
+                f'{len(info["projects"])} contexts</div>'
+                '</div>'
+                '<div class="right">'
+                f'<div class="figure">{fmt_money(info["cost"])}</div>'
+                f'<div class="sub">{pct:.1f}% of total</div>'
+                '</div></div>'
+            )
+        users_panel = (
+            '<section class="sec" aria-labelledby="sec-users">'
+            '<div class="sec-head">'
+            '<span class="sec-num">§ 04</span>'
+            '<h2 class="sec-title" id="sec-users">Top users by cost</h2>'
+            '<span class="sec-rule"></span>'
+            f'<span class="sec-note">{len(users)} contributors</span>'
+            '</div>'
+            '<p class="sec-lede">Attribution via <code>git config user.email</code> at the session cwd. '
+            'Each contributor running the tool against their own machine produces a team-wide picture.</p>'
+            f'<div class="cards" role="list">{"".join(ucards)}</div>'
+            '</section>'
+        )
+    else:
+        users_panel = ""
+
     # Cost vs value
     value_panel = ""
     if report_rows:
@@ -501,7 +555,7 @@ def render(cost_rows, report_rows, cost_mode, sub_cash, repo_label):
         value_panel = (
             '<section class="sec" aria-labelledby="sec-cv">'
             '<div class="sec-head">'
-            '<span class="sec-num">§ 04</span>'
+            '<span class="sec-num">§ 05</span>'
             '<h2 class="sec-title" id="sec-cv">Cost vs value, by issue</h2>'
             '<span class="sec-rule"></span>'
             '<span class="sec-note">Leverage per issue</span>'
@@ -579,6 +633,7 @@ def render(cost_rows, report_rows, cost_mode, sub_cash, repo_label):
 {daily_panel}
 {source_panel}
 {issues_panel}
+{users_panel}
 {value_panel}
 {method}
 <footer>
@@ -596,7 +651,7 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--cost-mode", choices=["api", "subscription"], default="api")
     ap.add_argument("--sub-cash", type=float, default=None)
-    ap.add_argument("--label", default="Harris · Wraith")
+    ap.add_argument("--label", default="AI Value Tracker")
     args = ap.parse_args()
 
     cost_rows = read_csv(args.cost)

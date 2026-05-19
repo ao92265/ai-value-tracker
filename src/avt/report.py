@@ -4,7 +4,7 @@ value_score is a placeholder formula:
     value_score = lines_added + lines_removed + (prs_merged * 200)
 
 Replace with the real customer-recognised measure once product telemetry
-is wired up (see docs/wraith-telemetry-spec.md).
+is wired up (see docs/telemetry-spec.md).
 """
 
 import argparse

@@ -55,11 +55,16 @@ def prs_for_issue(repo, issue_num):
 
 def main():
     ap = argparse.ArgumentParser(description="GitHub issue + PR stats for value side.")
-    ap.add_argument("--repo", default="i2group-FIS/Wraith")
+    ap.add_argument("--repo", default=os.environ.get("AVT_REPO"),
+                    help="GitHub repo as owner/name. Defaults to $AVT_REPO env var.")
     ap.add_argument("--days", type=int, default=30)
     ap.add_argument("--out", default="-")
     ap.add_argument("--issues", help="Comma-separated issue numbers to limit to (skip listing).")
     args = ap.parse_args()
+
+    if not args.repo:
+        print("error: --repo owner/name (or set $AVT_REPO)", file=sys.stderr)
+        sys.exit(2)
 
     if args.issues:
         issue_nums = [int(x) for x in args.issues.split(",")]

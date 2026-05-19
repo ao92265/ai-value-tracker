@@ -52,6 +52,7 @@ def read(csv_path):
                 "started": date,
                 "cost_usd": round(cost, 4),
                 "attributed_to": attr,
+                "user": api_key or "",
                 "units": ti + to + cw + cr,
                 "notes": f"model={model}",
             })
