@@ -16,6 +16,7 @@ avt-spend = "avt.spend:main"
 avt-value = "avt.value:main"
 avt-report = "avt.report:main"
 avt-cost = "avt.cost:main"
+avt-html = "avt.html_report:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
