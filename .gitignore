@@ -5,6 +5,4 @@ __pycache__/
 build/
 dist/
 out/
-*.csv
-*.png
 .DS_Store

@@ -1,0 +1,8 @@
+issue,title,branch,sessions,cost_usd,prs_open,prs_merged,lines_added,lines_removed,files_changed,value_score,ratio
+1042,Refactor billing service,feat/issue-1042-billing,4,908.75,0,2,1247,418,18,2065,2.27
+1078,Add tenant scoping to webhook handlers,feat/issue-1078-tenant,2,522.95,1,1,612,87,9,899,1.72
+1102,Dashboard performance audit,fix/issue-1102-dashboard-perf,2,327.95,0,1,403,142,11,745,2.27
+1110,Schema migration for audit log table,feat/issue-1110-audit,2,477.65,0,1,289,12,4,501,1.05
+1085,Migrate jobs queue to BullMQ v5,chore/issue-1085-bullmq-upgrade,2,165.60,1,0,892,1140,22,2032,12.27
+1115,Fix flaky e2e tests,fix/issue-1115-flakes,2,161.70,0,1,68,124,6,392,2.43
+1120,Doc rewrite for v2 API,docs/issue-1120-v2-api,2,81.30,0,1,418,32,3,450,5.53
