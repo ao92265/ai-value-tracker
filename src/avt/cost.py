@@ -20,6 +20,11 @@ from avt.sources import claude_jsonl, anthropic_invoice, copilot_admin, vendor_c
 def main():
     ap = argparse.ArgumentParser(description="Unified AI cost across all configured sources.")
     ap.add_argument("--out", default="-")
+    ap.add_argument("--cost-mode", choices=["api", "subscription"], default="api",
+                    help="api = real cash; subscription = hypothetical token-equivalent (Max/Pro/seat plans).")
+    ap.add_argument("--sub-cash", type=float, default=None,
+                    help="Real monthly subscription cash spend (only with --cost-mode subscription). "
+                         "Printed alongside the hypothetical token-equivalent.")
 
     # claude code
     ap.add_argument("--claude", action="store_true", help="Include Claude Code JSONL spend.")
@@ -39,6 +44,13 @@ def main():
     ap.add_argument("--vendor-source", default="vendor", help="Label for this vendor source.")
 
     args = ap.parse_args()
+
+    if args.cost_mode == "subscription":
+        print("===========================================================", file=sys.stderr)
+        print(" HYPOTHETICAL COST MODE (subscription plan in use)", file=sys.stderr)
+        print(" Numbers below are token-equivalent API cost, not cash.", file=sys.stderr)
+        print(" Useful for routing + attribution, not for finance.", file=sys.stderr)
+        print("===========================================================", file=sys.stderr)
 
     rows = []
 
@@ -86,6 +98,14 @@ def main():
     for src, cost in sorted(by_source.items(), key=lambda x: x[1], reverse=True):
         pct = (cost / total * 100) if total else 0
         print(f"  {src:<20} ${cost:>10.2f}  ({pct:>5.1f}%)", file=sys.stderr)
+
+    if args.cost_mode == "subscription":
+        print(f"\n  Hypothetical API-equivalent: ${total:.2f}", file=sys.stderr)
+        if args.sub_cash is not None:
+            print(f"  Real subscription cash:      ${args.sub_cash:.2f}", file=sys.stderr)
+            if args.sub_cash:
+                print(f"  Ratio (hypothetical/cash):   {total / args.sub_cash:.2f}x",
+                      file=sys.stderr)
 
 
 if __name__ == "__main__":

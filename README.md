@@ -140,6 +140,87 @@ The CSV is half the story. Lines of code is not value. The other half is product
 
 Spec is in [`docs/wraith-telemetry-spec.md`](docs/wraith-telemetry-spec.md). Prisma schema, endpoint, permission, rollout. Once it ships, `avt.telemetry` reads from it and replaces the placeholder.
 
+## FAQ
+
+### Can't I just look at the Claude Code dashboard?
+
+For a single tool, single user, yes. `claude /cost`, the native dashboard, and `~/Repos/claude-observatory` cover that.
+
+This tool adds four things native doesn't:
+
+1. **Per-issue attribution.** Native says "Tuesday cost $200." This says "Issue #7922 cost $3.9k across the week, attributed via branch + git reflog."
+2. **Cross-vendor unification.** Claude dashboard + Copilot UI + Anthropic console + Cursor portal + vendor invoice = 5 places. This puts them in one CSV with a `source` column.
+3. **Cost-vs-value join.** Native shows cost. Doesn't pull GitHub PRs against the spend window and compute a ratio.
+4. **Per-tenant value attribution.** Once product telemetry lands, native can't tell you "Jersey tenant generated $X of AI value." This will.
+
+If your use case is "I want to see my Claude bill", use `claude /cost`. If it's "the CFO is asking where the AI money went and what it produced", use this.
+
+### What if we're on a flat subscription, not the API?
+
+Read carefully — this is the most common misuse.
+
+If your team is on Claude Max ($200/mo flat), Claude Pro, or Copilot Business ($19/seat), the per-token numbers this tool prints are **hypothetical**. They are "what this would cost on the API at list price." Actual cash is the subscription.
+
+Run with the right mode:
+
+```bash
+avt-cost --claude --cost-mode subscription --sub-cash 200
+```
+
+Output then includes a banner plus a ratio:
+
+```
+HYPOTHETICAL COST MODE (subscription plan in use)
+Numbers below are token-equivalent API cost, not cash.
+
+Total: $4682.99 across 55 rows
+
+Hypothetical API-equivalent: $4682.99
+Real subscription cash:      $200.00
+Ratio (hypothetical/cash):   23.41x
+```
+
+The hypothetical number is still useful for:
+
+- **Routing.** "This task burned $80 of opus-equivalent and could've been $12 of sonnet-equivalent" is actionable even if you paid neither in cash.
+- **Capacity planning.** Flat sub doesn't mean infinite throughput. Token-equivalent flags when you'll hit throttling.
+- **Per-feature comparison.** Ratio between features is meaningful even when absolute is hypothetical.
+- **Sub-vs-API decision.** A 23x ratio says "stay on the sub." A 0.4x ratio says "switch to API."
+
+Use `--cost-mode api` (default) only when you actually pay per token.
+
+### When does this tool earn its keep?
+
+| Scenario | Native enough? | Use this? |
+|---|---|---|
+| Solo dev curious about session cost | yes | overkill |
+| BU with mixed Max/API users | partial | useful for attribution |
+| BU pitching outcome pricing to a customer | no | needed (value side) |
+| Multi-BU report to leadership | no (5 dashboards) | needed (unification) |
+| Finance asking "did we save the $1M we promised?" | no | needed (cost-vs-value) |
+| Quarterly per-tenant pricing review | no | needed (telemetry) |
+
+### Is the value side useful before product telemetry lands?
+
+Partially. Today `value_score = lines + (merged_prs × 200)`. That's a code-volume proxy. Acceptable as a relative measure between features. Not acceptable as an absolute "did AI pay back" number.
+
+For the absolute number, ship the product telemetry described in `docs/wraith-telemetry-spec.md`. Until then, treat the ratio as directional, not financial.
+
+### Why not Azure DevOps / GitLab / Jira out of the box?
+
+`avt-value` is the only GitHub-specific module today. Spend side runs on any project. Other VCS adapters are ~100 lines each. PRs welcome (see `CONTRIBUTING.md`).
+
+### What about pricing accuracy?
+
+Token prices in `src/avt/spend.py` are list-price as of late 2025. They will drift. Update the dict when Anthropic publishes new prices. Enterprise volume discounts are not modelled — apply a flat multiplier downstream if needed.
+
+### What this is NOT
+
+- Not a billing system. Talks to vendor invoices, doesn't replace them.
+- Not an observability tool. Use `~/Repos/claude-observatory` for hook-level / waste analysis.
+- Not a real-time dashboard. Daily/weekly batch.
+- Not a finance system of record. Numbers in hypothetical mode are not auditable.
+
 ## What it doesn't do yet
 
 - Pricing is approximate. Pre-launch model variants might be off.
